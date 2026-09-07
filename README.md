@@ -30,14 +30,20 @@ docs/
 src/
   data/
     feature_engineering_triple_barrier.py  # quant_xgboost에서 복사해올 것 (아래 TODO 1)
+  regime/                      # quant_unsupervised에서 이식 (국면 클러스터링, 064350 전용 fit)
+    price_data.py
+    regime_features.py
+    regime_clustering.py
   sizing/                     # 사이징 공식 자체 -- 순수 계산 로직만, I/O 없음
     confidence_sizing.py        # 신뢰도항 m_confidence (López de Prado 확률->베팅크기)
     volatility_sizing.py         # 변동성항 vol_term (volatility targeting)
-    regime_penalty.py             # 국면 penalty (quant_unsupervised 클러스터 재사용)
+    regime_penalty.py             # 국면 penalty (anomaly_score_normalized를 입력받는 순수함수)
     combine_sizing.py              # 세 항 곱셈적 결합 -> final_size
   scripts/                    # 실행 진입점 -- 데이터 로드 + sizing 조합 + 백테스트
     estimate_fixed_params.py    # SIGMA_TARGET, BASE_UNIT_SIZE(half-Kelly) 1회성 계산
-    backtest_sizing_ablation.py  # baseline(fixed-size) vs treatment 5-seed 비교 + 판정
+    fit_regime_model_064350.py   # 064350 국면 클러스터링 1회성 fit + 저장 (models/*.joblib)
+    backtest_sizing_ablation.py   # baseline(fixed-size) vs treatment 5-seed 비교 + 판정
+models/                   # fit_regime_model_064350.py가 저장하는 .joblib (gitignore 처리)
 data/                     # 생성되는 중간 산출물 (gitignore 처리)
 requirements.txt
 ```
@@ -47,19 +53,26 @@ requirements.txt
 스크립트들이 `feature_engineering_triple_barrier.py`를 공유해서 쓰던 것과 같은 분리
 원칙 (계산 로직과 실행 스크립트를 분리).
 
+**`quant_unsupervised`와의 차이**: `quant_unsupervised`는 모델을 저장하지 않고 실행할
+때마다 그 자리에서 새로 fit하며, 118990/052690에만 적용해봤을 뿐 064350에는 적용된
+적이 없었다. 그래서 이 레포는 `quant_unsupervised`의 세 모듈(`price_data.py`,
+`regime_features.py`, `regime_clustering.py`)을 `src/regime/`로 이식하고,
+`fit_regime_model_064350.py`로 064350에 대해 딱 한 번 fit해서 그 결과
+(`models/064350_regime_model.joblib`)를 이후 계속 재사용한다 — 이 스크립트를
+재실행하는 것은 곧 재학습이므로, 결과를 보고 나서 재실행하지 않는다.
+
 ## 실행 전 반드시 채워야 할 것 (TODO)
 
-1. **`feature_engineering_triple_barrier.py`를 `quant_xgboost`에서 이 레포
-   `src/data/`로 복사해올 것** (자기완결적 레포 컨벤션 — 이 파일이 없으면 아래
-   스크립트들이 안 돌아감).
+1. **`feature_engineering.py`, `labeling_triple_barrier.py`를 `quant_xgboost`에서
+   `src/data/`로 복사해올 것** (`feature_engineering_triple_barrier.py`가 이 둘을
+   import함 -- 자기완결적 레포 컨벤션).
 2. `estimate_fixed_params.py` 실행 → 콘솔에 나오는 `SIGMA_TARGET`, `BASE_UNIT_SIZE`
    값을 `src/sizing/volatility_sizing.py` / `src/sizing/combine_sizing.py` 상수에
    손으로 채워넣을 것 (자동 반영 안 함 — "데이터 보고 나서 조정 금지"를 코드로도
    강제하기 위해 의도적으로 수동 단계로 분리).
-3. `regime_penalty.py`의 `compute_regime_penalty()`가 받는
-   `anomaly_score_normalized`를 실제로 만드는 로직(`quant_unsupervised`의 K-means
-   centroid + 정규화 min/max 로드 → 거리 계산)을 `backtest_sizing_ablation.py`의
-   `compute_anomaly_score_normalized()`에 채워넣을 것 (지금은 `NotImplementedError`).
+3. `fit_regime_model_064350.py` 실행 → `models/064350_regime_model.joblib` 생성.
+   이 스크립트는 딱 한 번만 실행할 것 — 재실행하면 K-means가 다시 fit되므로 곧
+   재학습이다.
 
 ## 실행 순서 (레포 루트에서, 패키지 구조라 `-m` 필요 — `quant_seq_model`과 동일한 이유)
 
@@ -68,11 +81,12 @@ python -m venv venv
 venv\Scripts\activate        # Windows
 pip install -r requirements.txt
 
-# 1. quant_xgboost에서 feature_engineering_triple_barrier.py를 src/data/로 복사해오기
+# 1. quant_xgboost에서 feature_engineering.py, labeling_triple_barrier.py를 src/data/로 복사해오기
 # 2. 사전 고정 파라미터 계산 (SIGMA_TARGET, half-Kelly)
 python -m src.scripts.estimate_fixed_params
 # 3. 위 출력값을 src/sizing/volatility_sizing.py, src/sizing/combine_sizing.py 상수에 채워넣기
-# 4. quant_unsupervised K-means 연결 (regime_penalty 실 계산 완성)
+# 4. 064350 국면 클러스터링 1회성 fit + 저장 (재실행 금지)
+python -m src.scripts.fit_regime_model_064350
 # 5. baseline vs treatment 5-seed 비교 + 판정
 python -m src.scripts.backtest_sizing_ablation
 ```

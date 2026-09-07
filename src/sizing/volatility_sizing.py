@@ -24,8 +24,8 @@ import pandas as pd
 
 DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
 
-# TODO: estimate_fixed_params.py 실행 결과로 채우기 (0.0이면 아직 미확정 상태)
-SIGMA_TARGET = 0.0
+# estimate_fixed_params.py 실행 결과로 채움 (2026-09, 064350 walk-forward 거래 로그 77건 기준)
+SIGMA_TARGET = 0.3933
 
 VOL_TERM_CLIP_MIN = 0.3
 VOL_TERM_CLIP_MAX = 1.5

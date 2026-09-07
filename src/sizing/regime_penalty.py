@@ -4,10 +4,11 @@ quant_unsupervised의 K-means 국면 클러스터링 인프라 재사용 (재학
 
     regime_penalty = clip(1 - anomaly_score_normalized, 0.3, 1.0)
 
-quant_unsupervised에서 이미 K=2로 수렴했고, 국면 1(고변동성+급등 모멘텀)이
-이례적 국면으로 확인됨 (모트렉스 2020년 7.76배, 한전기술 2021년 5.08배).
-이 실험은 그 클러스터링 결과를 새로 학습하지 않고, 현재 시점이 "이례적 국면"
-클러스터 중심에 얼마나 가까운지를 거리로 재사용한다.
+quant_unsupervised에서 이미 학습된 K-means 클러스터를 재사용한다 -- 단, quant_unsupervised
+자체는 모델을 저장하지 않고 118990/052690에만 적용해봤을 뿐 064350에는 적용된 적이
+없었으므로, quant_position_sizing/src/scripts/fit_regime_model_064350.py로 064350에
+대해 딱 한 번 fit해서 저장한 산출물(models/064350_regime_model.joblib)을 재사용한다.
+이례적 국면(anomalous_cluster) 판정 규칙과 그 산출 과정은 그 스크립트의 docstring 참고.
 
 feature 4개 (quant_unsupervised와 동일, 새로 만들지 않음):
     hist_vol_20d, return_20d, bb_width, macd_hist

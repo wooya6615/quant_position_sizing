@@ -55,11 +55,11 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from feature_engineering import (
+from .feature_engineering import (
     load_data, add_momentum_features, add_volatility_features,
     add_volume_features, add_relative_strength_features, add_label,
 )
-from labeling_triple_barrier import build_shifted_barrier_labels
+from .labeling_triple_barrier import build_shifted_barrier_labels
 
 DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
 

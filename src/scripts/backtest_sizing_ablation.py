@@ -8,11 +8,12 @@ prereg 문서(docs/prereg_regime_aware_sizing.md) 4~5절의 검증 프로토콜/
 ⚠️ 전제 (실행 전 반드시 완료):
     1. estimate_fixed_params.py 실행 -> SIGMA_TARGET, BASE_UNIT_SIZE 확정
        -> volatility_sizing.py, combine_sizing.py 상수에 채워넣기
-    2. quant_unsupervised에서 저장된 K-means 모델(centroid) + 정규화 min/max를
-       이 레포로 가져와서 regime_penalty.py의 anomaly_score 계산 로직 완성
-       (지금은 미완성 -- compute_anomaly_score_normalized()가 TODO 상태)
+    2. fit_regime_model_064350.py 실행 -> models/064350_regime_model.joblib 생성
+       (quant_unsupervised는 064350에 적용된 적이 없고 모델을 저장하지도 않으므로,
+       이 스크립트로 딱 한 번 fit해서 저장한 걸 재사용함 -- 재실행은 곧 재학습이므로
+       결과를 보고 나서 재실행하지 말 것)
 
-이 두 전제가 안 채워진 채로 실행하면 assert에서 바로 멈추게 만들어 둠
+이 두 전제가 안 채워진 채로 실행하면 assert/에러에서 바로 멈추게 만들어 둠
 (조용히 잘못된 값으로 진행하는 것 방지).
 
 사용법 (레포 루트에서):
@@ -21,17 +22,21 @@ prereg 문서(docs/prereg_regime_aware_sizing.md) 4~5절의 검증 프로토콜/
 
 from pathlib import Path
 
+import joblib
 import numpy as np
 import pandas as pd
 import xgboost as xgb
 
 from src.data.feature_engineering_triple_barrier import build_triple_barrier_dataset, FEATURE_COLS_BASE
+from src.regime.regime_features import REGIME_FEATURE_COLS
 from src.sizing.confidence_sizing import compute_confidence_term, ENTRY_THRESHOLD
 from src.sizing.volatility_sizing import compute_realized_vol_20d, compute_vol_term, SIGMA_TARGET
-from src.sizing.regime_penalty import compute_regime_penalty, REGIME_FEATURES
+from src.sizing.regime_penalty import compute_regime_penalty
 from src.sizing.combine_sizing import combine, BASE_UNIT_SIZE
 
 DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
+MODELS_DIR = Path(__file__).resolve().parent.parent.parent / "models"
+REGIME_MODEL_PATH = MODELS_DIR / "064350_regime_model.joblib"
 
 TICKER_KRX = "064350"
 TICKER = "064350.KS"
@@ -75,17 +80,57 @@ def walk_forward_splits(n_rows, train_size, test_size, step, embargo):
     return splits
 
 
+_regime_artifact = None  # 프로세스당 한 번만 로드 (fit_regime_model_064350.py 결과, 재학습 안 함)
+
+
+def _load_regime_artifact() -> dict:
+    global _regime_artifact
+    if _regime_artifact is None:
+        if not REGIME_MODEL_PATH.exists():
+            raise FileNotFoundError(
+                f"{REGIME_MODEL_PATH}가 없음 -- 먼저 "
+                "`python -m src.scripts.fit_regime_model_064350`을 실행해서 "
+                "064350 국면 클러스터링 모델을 저장할 것."
+            )
+        _regime_artifact = joblib.load(REGIME_MODEL_PATH)
+    return _regime_artifact
+
+
 def compute_anomaly_score_normalized(df: pd.DataFrame, row_idx: int) -> float:
     """
-    TODO(전제 2): quant_unsupervised의 K-means centroid + 정규화 min/max를 로드해서
-    실제 거리 기반 anomaly score를 계산할 것. 지금은 완성 전이라 실행 시 에러를 낸다
-    -- placeholder 값(예: 0.5)으로 조용히 진행하면 regime_penalty가 항상 같은 값이
-    나와서 "국면 penalty 효과가 있다/없다"는 결론 자체가 무의미해진다.
+    fit_regime_model_064350.py가 저장한 (scaler, kmeans, anomalous_cluster,
+    dist_min, dist_max)를 그대로 불러와서 predict/거리계산만 수행 -- 여기서
+    KMeans를 다시 fit()하지 않는다.
+
+    REGIME_FEATURE_COLS(hist_vol_20d, return_20d, bb_width, macd_hist)는
+    feature_engineering_triple_barrier.py가 FEATURE_COLS_BASE에 이미 포함해서
+    만든 컬럼과 정의가 동일하므로, 국면 피처를 따로 계산하지 않고 df에서
+    바로 뽑아 쓴다.
+
+    반환: anomaly_score_normalized, [0,1]. 이례적 클러스터 중심에 가까울수록 1.
     """
-    raise NotImplementedError(
-        "quant_unsupervised의 K-means centroid/정규화 min-max를 연결해야 함 "
-        "(regime_penalty.py 상단 주석 참고, 재학습 금지 -- predict/거리계산만)"
-    )
+    artifact = _load_regime_artifact()
+    scaler = artifact["scaler"]
+    kmeans = artifact["kmeans"]
+    anomalous_cluster = artifact["anomalous_cluster"]
+    dist_min, dist_max = artifact["dist_min"], artifact["dist_max"]
+
+    row = df[REGIME_FEATURE_COLS].iloc[row_idx]
+    if row.isna().any():
+        raise ValueError(
+            f"row_idx={row_idx}에서 REGIME_FEATURE_COLS 중 NaN 발견 -- "
+            "이 인덱스는 진입 대상에서 제외됐어야 함 (업스트림 dropna 확인할 것)"
+        )
+
+    X_scaled = scaler.transform(row.to_frame().T)
+    centroid = kmeans.cluster_centers_[anomalous_cluster]
+    dist = float(np.linalg.norm(X_scaled[0] - centroid))
+
+    denom = dist_max - dist_min
+    normalized_dist = (dist - dist_min) / denom if denom > 0 else 0.5
+    normalized_dist = float(np.clip(normalized_dist, 0.0, 1.0))
+
+    return 1.0 - normalized_dist  # 거리가 가까울수록(작을수록) 1에 가깝게
 
 
 def generate_trades_with_sizing(df: pd.DataFrame, seed: int) -> pd.DataFrame:

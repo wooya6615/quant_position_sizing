@@ -23,8 +23,9 @@ from .regime_penalty import compute_regime_penalty
 
 DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
 
-# TODO: estimate_fixed_params.py 실행 결과로 채우기 (0.0이면 아직 미확정 상태)
-BASE_UNIT_SIZE = 0.0
+# estimate_fixed_params.py 실행 결과로 채움 (2026-09, half-Kelly)
+# 승률 p=0.597, 평균이익=0.1792, 평균손실=0.1046, odds b=1.713 -> Kelly f*=0.3624
+BASE_UNIT_SIZE = 0.1812
 MAX_POSITION = 1.0  # 자본 대비 최대 비중, 사전 고정
 
 
