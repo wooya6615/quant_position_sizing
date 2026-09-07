@@ -1,0 +1,28 @@
+# 가상환경
+venv/
+.venv/
+
+# Python 캐시
+__pycache__/
+*.pyc
+*.pyo
+
+# 환경변수 (API 키 등, 이 레포는 안 쓰지만 프로젝트 공통 컨벤션 유지)
+.env
+
+# 생성되는 중간 산출물 -- README에 명시된 대로 gitignore 처리
+# (estimate_fixed_params.py가 만드는 거래 로그, feature_engineering_triple_barrier.py가
+#  만드는 064350_features_triple_barrier_*.csv 등)
+data/
+
+# fit_regime_model_064350.py가 저장하는 .joblib
+# ⚠️ 주의: 이 파일은 재현 불가능한 산출물이 아니라 "1회성 fit 결과를 고정해서 재사용"하는
+# 목적이라 원래는 커밋해서 팀원/미래의 나와 공유하는 게 맞을 수도 있음 -- 다만 지금은
+# 다른 레포들(quant_xgboost의 models/ 등)과 동일하게 gitignore 처리해 컨벤션을 맞춤.
+# 재현하려면 python -m src.scripts.fit_regime_model_064350 재실행 (seed 고정이라 결과 동일).
+models/
+
+# OS/에디터
+.DS_Store
+.idea/
+.vscode/
